@@ -1,5 +1,35 @@
 #!/usr/bin/env node
 
+/**
+ * Gmail MCP Server
+ *
+ * Forked from GongRzhe/Gmail-MCP-Server and modified to:
+ * - Use Bun as package manager and bundler (instead of npm/tsc)
+ * - Add headless authentication for remote servers
+ * - Use read-only scope by default (gmail.readonly)
+ *
+ * AUTHENTICATION:
+ * ---------------
+ * 1. Place your GCP OAuth credentials at: ~/.gmail-mcp/gcp-oauth.keys.json
+ * 2. Run authentication:
+ *    - With browser:  bun run auth
+ *    - Headless:      bun run auth:headless
+ * 3. Credentials are saved to: ~/.gmail-mcp/credentials.json
+ *
+ * TOKEN EXPIRY:
+ * -------------
+ * If you get authentication errors, your token may have expired.
+ * Delete ~/.gmail-mcp/credentials.json and re-run auth:
+ *    rm ~/.gmail-mcp/credentials.json
+ *    bun run auth:headless
+ *
+ * SCOPES:
+ * -------
+ * Currently using gmail.readonly. To enable send/modify/delete,
+ * uncomment the additional scopes in the authenticate() function
+ * and re-run authentication.
+ */
+
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -143,19 +173,57 @@ async function loadCredentials() {
     }
 }
 
-async function authenticate() {
+async function authenticate(headless: boolean = false) {
+    const authUrl = oauth2Client.generateAuthUrl({
+        access_type: 'offline',
+        // Using read-only scope for now. Uncomment below for full read/write access.
+        scope: [
+            'https://www.googleapis.com/auth/gmail.readonly'
+            // 'https://www.googleapis.com/auth/gmail.modify',
+            // 'https://www.googleapis.com/auth/gmail.settings.basic'
+        ],
+        // For headless, use OOB flow with manual redirect
+        redirect_uri: headless ? 'urn:ietf:wg:oauth:2.0:oob' : 'http://localhost:3000/oauth2callback',
+    });
+
+    if (headless) {
+        // Headless mode: user manually copies the auth code
+        console.log('\n=== Headless Authentication ===');
+        console.log('1. Visit this URL in any browser:\n');
+        console.log(authUrl);
+        console.log('\n2. After authorizing, Google will display a code.');
+        console.log('3. Paste that code here and press Enter:\n');
+
+        const readline = await import('readline');
+        const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout,
+        });
+
+        return new Promise<void>((resolve, reject) => {
+            rl.question('Authorization code: ', async (code) => {
+                rl.close();
+                try {
+                    // Update redirect_uri for token exchange
+                    oauth2Client.redirectUri = 'urn:ietf:wg:oauth:2.0:oob';
+                    const { tokens } = await oauth2Client.getToken(code.trim());
+                    oauth2Client.setCredentials(tokens);
+                    fs.writeFileSync(CREDENTIALS_PATH, JSON.stringify(tokens));
+                    console.log('\nAuthentication successful! Credentials saved.');
+                    resolve();
+                } catch (error: any) {
+                    console.error('\nAuthentication failed:', error.message);
+                    reject(error);
+                }
+            });
+        });
+    }
+
+    // Browser mode: start local server for callback
     const server = http.createServer();
     server.listen(3000);
 
     return new Promise<void>((resolve, reject) => {
-        const authUrl = oauth2Client.generateAuthUrl({
-            access_type: 'offline',
-            scope: [
-                'https://www.googleapis.com/auth/gmail.modify',
-                'https://www.googleapis.com/auth/gmail.settings.basic'
-            ],
-        });
-
         console.log('Please visit this URL to authenticate:', authUrl);
         open(authUrl);
 
@@ -323,7 +391,8 @@ async function main() {
     await loadCredentials();
 
     if (process.argv[2] === 'auth') {
-        await authenticate();
+        const headless = process.argv.includes('--headless');
+        await authenticate(headless);
         console.log('Authentication completed successfully');
         process.exit(0);
     }
@@ -364,29 +433,26 @@ async function main() {
                 inputSchema: zodToJsonSchema(SearchEmailsSchema),
             },
             {
-                name: "modify_email",
-                description: "Modifies email labels (move to different folders)",
-                inputSchema: zodToJsonSchema(ModifyEmailSchema),
-            },
-            {
-                name: "delete_email",
-                description: "Permanently deletes an email",
-                inputSchema: zodToJsonSchema(DeleteEmailSchema),
-            },
-            {
                 name: "list_email_labels",
                 description: "Retrieves all available Gmail labels",
                 inputSchema: zodToJsonSchema(ListEmailLabelsSchema),
             },
             {
+                name: "download_attachment",
+                description: "Downloads an email attachment to a specified location",
+                inputSchema: zodToJsonSchema(DownloadAttachmentSchema),
+            },
+
+            // Hide behind all tools flag
+            {
+                name: "modify_email",
+                description: "Modifies email labels (move to different folders)",
+                inputSchema: zodToJsonSchema(ModifyEmailSchema),
+            }, 
+            {
                 name: "batch_modify_emails",
                 description: "Modifies labels for multiple emails in batches",
                 inputSchema: zodToJsonSchema(BatchModifyEmailsSchema),
-            },
-            {
-                name: "batch_delete_emails",
-                description: "Permanently deletes multiple emails in batches",
-                inputSchema: zodToJsonSchema(BatchDeleteEmailsSchema),
             },
             {
                 name: "create_label",
@@ -397,11 +463,6 @@ async function main() {
                 name: "update_label",
                 description: "Updates an existing Gmail label",
                 inputSchema: zodToJsonSchema(UpdateLabelSchema),
-            },
-            {
-                name: "delete_label",
-                description: "Deletes a Gmail label",
-                inputSchema: zodToJsonSchema(DeleteLabelSchema),
             },
             {
                 name: "get_or_create_label",
@@ -433,11 +494,24 @@ async function main() {
                 description: "Creates a filter using a pre-defined template for common scenarios",
                 inputSchema: zodToJsonSchema(CreateFilterFromTemplateSchema),
             },
+            
+            // remove
             {
-                name: "download_attachment",
-                description: "Downloads an email attachment to a specified location",
-                inputSchema: zodToJsonSchema(DownloadAttachmentSchema),
+                name: "delete_email",
+                description: "Permanently deletes an email",
+                inputSchema: zodToJsonSchema(DeleteEmailSchema),
             },
+            {
+                name: "batch_delete_emails",
+                description: "Permanently deletes multiple emails in batches",
+                inputSchema: zodToJsonSchema(BatchDeleteEmailsSchema),
+            },
+            {
+                name: "delete_label",
+                description: "Deletes a Gmail label",
+                inputSchema: zodToJsonSchema(DeleteLabelSchema),
+            },
+
         ],
     }))
 
