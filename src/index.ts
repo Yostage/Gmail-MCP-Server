@@ -49,6 +49,8 @@ import os from 'os';
 import {createEmailMessage, createEmailWithNodemailer} from "./utl.js";
 import { createLabel, updateLabel, deleteLabel, listLabels, findLabelByName, getOrCreateLabel, GmailLabel } from "./label-manager.js";
 import { createFilter, listFilters, getFilter, deleteFilter, filterTemplates, GmailFilterCriteria, GmailFilterAction } from "./filter-manager.js";
+import TurndownService from 'turndown';
+import { JSDOM } from 'jsdom';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -121,6 +123,87 @@ function extractEmailContent(messagePart: GmailMessagePart): EmailContent {
 
     // Return both plain text and HTML content
     return { text: textContent, html: htmlContent };
+}
+
+/**
+ * Convert email HTML to clean markdown for LLM consumption.
+ * Pipeline: strip styles/scripts → remove tracking pixels → turndown → clean whitespace.
+ */
+const emailTurndown = new TurndownService({
+    headingStyle: 'atx',
+    bulletListMarker: '-',
+    codeBlockStyle: 'fenced',
+});
+
+// Strip images — LLMs can't render them
+emailTurndown.addRule('removeImages', {
+    filter: 'img',
+    replacement: () => '',
+});
+
+// Remove links that only contain images (no text)
+emailTurndown.addRule('imageOnlyLinks', {
+    filter: (node: HTMLElement) => {
+        return node.nodeName === 'A'
+            && node.querySelector('img') !== null
+            && !node.textContent?.trim();
+    },
+    replacement: () => '',
+});
+
+function emailHtmlToMarkdown(html: string): string {
+    // Pre-strip style/script tags via regex before JSDOM to avoid CSS parsing errors
+    html = html.replace(/<style[\s\S]*?<\/style>/gi, '');
+    html = html.replace(/<script[\s\S]*?<\/script>/gi, '');
+
+    const dom = new JSDOM(html);
+    const doc = dom.window.document;
+
+    // Remove head element
+    doc.querySelectorAll('head').forEach((el: Element) => el.remove());
+
+    // Remove tracking pixels and spacer images
+    doc.querySelectorAll('img').forEach((img: HTMLImageElement) => {
+        const src = img.getAttribute('src') || '';
+        const width = img.getAttribute('width');
+        const height = img.getAttribute('height');
+        // 1x1 tracking pixels
+        if ((width === '1' && height === '1') || width === '0' || height === '0') {
+            img.remove();
+            return;
+        }
+        // Spacer/tracking gifs
+        if (/pixel\.gif|spacer\.gif|transp\.gif/i.test(src)) {
+            img.remove();
+            return;
+        }
+        // cid: embedded images (not displayable in text)
+        if (src.startsWith('cid:')) {
+            img.remove();
+        }
+    });
+
+    // Remove elements with display:none
+    doc.querySelectorAll('[style]').forEach((el: Element) => {
+        const style = el.getAttribute('style') || '';
+        if (/display\s*:\s*none/i.test(style)) {
+            el.remove();
+        }
+    });
+
+    const cleanedHtml = doc.body ? doc.body.innerHTML : doc.documentElement.innerHTML;
+    const md = emailTurndown.turndown(cleanedHtml);
+
+    return md
+        // Collapse 3+ newlines to 2
+        .replace(/\n{3,}/g, '\n\n')
+        // Remove lines that are just whitespace
+        .replace(/^\s+$/gm, '')
+        // Remove zero-width chars and invisible Unicode
+        .replace(/[\u200B-\u200F\u2028-\u202F\u2060-\u206F\uFEFF]/g, '')
+        // Remove soft hyphens
+        .replace(/\u00AD/g, '')
+        .trim();
 }
 
 async function loadCredentials() {
@@ -710,13 +793,13 @@ async function main() {
                     // Extract email content using the recursive function
                     const { text, html } = extractEmailContent(response.data.payload as GmailMessagePart || {});
 
-                    // Use plain text content if available, otherwise use HTML content
-                    // (optionally, you could implement HTML-to-text conversion here)
-                    let body = text || html || '';
-
-                    // If we only have HTML content, add a note for the user
-                    const contentTypeNote = !text && html ?
-                        '[Note: This email is HTML-formatted. Plain text version not available.]\n\n' : '';
+                    // Prefer HTML converted to markdown (what the user sees), fall back to plain text
+                    let body: string;
+                    if (html) {
+                        body = emailHtmlToMarkdown(html);
+                    } else {
+                        body = text || '';
+                    }
 
                     // Get attachment information
                     const attachments: EmailAttachment[] = [];
@@ -751,7 +834,7 @@ async function main() {
                         content: [
                             {
                                 type: "text",
-                                text: `Thread ID: ${threadId}\nSubject: ${subject}\nFrom: ${from}\nTo: ${to}\nDate: ${date}\n\n${contentTypeNote}${body}${attachmentInfo}`,
+                                text: `Thread ID: ${threadId}\nSubject: ${subject}\nFrom: ${from}\nTo: ${to}\nDate: ${date}\n\n${body}${attachmentInfo}`,
                             },
                         ],
                     };
