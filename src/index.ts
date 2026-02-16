@@ -805,7 +805,7 @@ async function main() {
                     const attachments: EmailAttachment[] = [];
                     const processAttachmentParts = (part: GmailMessagePart, path: string = '') => {
                         if (part.body && part.body.attachmentId) {
-                            const filename = part.filename || `attachment-${part.body.attachmentId}`;
+                            const filename = part.filename || `attachment-${part.body.attachmentId.slice(0, 20)}`;
                             attachments.push({
                                 id: part.body.attachmentId,
                                 filename: filename,
@@ -1311,7 +1311,7 @@ async function main() {
                             // Find the attachment part to get original filename
                             const findAttachment = (part: any): string | null => {
                                 if (part.body && part.body.attachmentId === validatedArgs.attachmentId) {
-                                    return part.filename || `attachment-${validatedArgs.attachmentId}`;
+                                    return part.filename || null;
                                 }
                                 if (part.parts) {
                                     for (const subpart of part.parts) {
@@ -1321,8 +1321,9 @@ async function main() {
                                 }
                                 return null;
                             };
-                            
-                            filename = findAttachment(messageResponse.data.payload) || `attachment-${validatedArgs.attachmentId}`;
+
+                            filename = findAttachment(messageResponse.data.payload)
+                                || `attachment-${validatedArgs.attachmentId.slice(0, 20)}`;
                         }
 
                         // Ensure save directory exists
