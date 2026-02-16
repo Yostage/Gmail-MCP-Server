@@ -409,110 +409,99 @@ async function main() {
         },
     });
 
+    // Core tools are always exposed. Set GMAIL_ALL_TOOLS=true to also
+    // expose label management, filters, and batch operations.
+    const allTools = process.env.GMAIL_ALL_TOOLS === 'true';
+
+    const coreTools = [
+        {
+            name: "send_email",
+            description: "Sends a new email",
+            inputSchema: zodToJsonSchema(SendEmailSchema),
+        },
+        {
+            name: "draft_email",
+            description: "Draft a new email",
+            inputSchema: zodToJsonSchema(SendEmailSchema),
+        },
+        {
+            name: "read_email",
+            description: "Retrieves the content of a specific email",
+            inputSchema: zodToJsonSchema(ReadEmailSchema),
+        },
+        {
+            name: "search_emails",
+            description: "Searches for emails using Gmail search syntax",
+            inputSchema: zodToJsonSchema(SearchEmailsSchema),
+        },
+        {
+            name: "list_email_labels",
+            description: "Retrieves all available Gmail labels",
+            inputSchema: zodToJsonSchema(ListEmailLabelsSchema),
+        },
+        {
+            name: "download_attachment",
+            description: "Downloads an email attachment to a specified location",
+            inputSchema: zodToJsonSchema(DownloadAttachmentSchema),
+        },
+    ];
+
+    const extraTools = [
+        {
+            name: "modify_email",
+            description: "Modifies email labels (move to different folders)",
+            inputSchema: zodToJsonSchema(ModifyEmailSchema),
+        },
+        {
+            name: "batch_modify_emails",
+            description: "Modifies labels for multiple emails in batches",
+            inputSchema: zodToJsonSchema(BatchModifyEmailsSchema),
+        },
+        {
+            name: "create_label",
+            description: "Creates a new Gmail label",
+            inputSchema: zodToJsonSchema(CreateLabelSchema),
+        },
+        {
+            name: "update_label",
+            description: "Updates an existing Gmail label",
+            inputSchema: zodToJsonSchema(UpdateLabelSchema),
+        },
+        {
+            name: "get_or_create_label",
+            description: "Gets an existing label by name or creates it if it doesn't exist",
+            inputSchema: zodToJsonSchema(GetOrCreateLabelSchema),
+        },
+        {
+            name: "create_filter",
+            description: "Creates a new Gmail filter with custom criteria and actions",
+            inputSchema: zodToJsonSchema(CreateFilterSchema),
+        },
+        {
+            name: "list_filters",
+            description: "Retrieves all Gmail filters",
+            inputSchema: zodToJsonSchema(ListFiltersSchema),
+        },
+        {
+            name: "get_filter",
+            description: "Gets details of a specific Gmail filter",
+            inputSchema: zodToJsonSchema(GetFilterSchema),
+        },
+        {
+            name: "delete_filter",
+            description: "Deletes a Gmail filter",
+            inputSchema: zodToJsonSchema(DeleteFilterSchema),
+        },
+        {
+            name: "create_filter_from_template",
+            description: "Creates a filter using a pre-defined template for common scenarios",
+            inputSchema: zodToJsonSchema(CreateFilterFromTemplateSchema),
+        },
+    ];
+
     // Tool handlers
     server.setRequestHandler(ListToolsRequestSchema, async () => ({
-        tools: [
-            {
-                name: "send_email",
-                description: "Sends a new email",
-                inputSchema: zodToJsonSchema(SendEmailSchema),
-            },
-            {
-                name: "draft_email",
-                description: "Draft a new email",
-                inputSchema: zodToJsonSchema(SendEmailSchema),
-            },
-            {
-                name: "read_email",
-                description: "Retrieves the content of a specific email",
-                inputSchema: zodToJsonSchema(ReadEmailSchema),
-            },
-            {
-                name: "search_emails",
-                description: "Searches for emails using Gmail search syntax",
-                inputSchema: zodToJsonSchema(SearchEmailsSchema),
-            },
-            {
-                name: "list_email_labels",
-                description: "Retrieves all available Gmail labels",
-                inputSchema: zodToJsonSchema(ListEmailLabelsSchema),
-            },
-            {
-                name: "download_attachment",
-                description: "Downloads an email attachment to a specified location",
-                inputSchema: zodToJsonSchema(DownloadAttachmentSchema),
-            },
-
-            // Hide behind all tools flag
-            {
-                name: "modify_email",
-                description: "Modifies email labels (move to different folders)",
-                inputSchema: zodToJsonSchema(ModifyEmailSchema),
-            }, 
-            {
-                name: "batch_modify_emails",
-                description: "Modifies labels for multiple emails in batches",
-                inputSchema: zodToJsonSchema(BatchModifyEmailsSchema),
-            },
-            {
-                name: "create_label",
-                description: "Creates a new Gmail label",
-                inputSchema: zodToJsonSchema(CreateLabelSchema),
-            },
-            {
-                name: "update_label",
-                description: "Updates an existing Gmail label",
-                inputSchema: zodToJsonSchema(UpdateLabelSchema),
-            },
-            {
-                name: "get_or_create_label",
-                description: "Gets an existing label by name or creates it if it doesn't exist",
-                inputSchema: zodToJsonSchema(GetOrCreateLabelSchema),
-            },
-            {
-                name: "create_filter",
-                description: "Creates a new Gmail filter with custom criteria and actions",
-                inputSchema: zodToJsonSchema(CreateFilterSchema),
-            },
-            {
-                name: "list_filters",
-                description: "Retrieves all Gmail filters",
-                inputSchema: zodToJsonSchema(ListFiltersSchema),
-            },
-            {
-                name: "get_filter",
-                description: "Gets details of a specific Gmail filter",
-                inputSchema: zodToJsonSchema(GetFilterSchema),
-            },
-            {
-                name: "delete_filter",
-                description: "Deletes a Gmail filter",
-                inputSchema: zodToJsonSchema(DeleteFilterSchema),
-            },
-            {
-                name: "create_filter_from_template",
-                description: "Creates a filter using a pre-defined template for common scenarios",
-                inputSchema: zodToJsonSchema(CreateFilterFromTemplateSchema),
-            },
-            
-            // remove
-            {
-                name: "delete_email",
-                description: "Permanently deletes an email",
-                inputSchema: zodToJsonSchema(DeleteEmailSchema),
-            },
-            {
-                name: "batch_delete_emails",
-                description: "Permanently deletes multiple emails in batches",
-                inputSchema: zodToJsonSchema(BatchDeleteEmailsSchema),
-            },
-            {
-                name: "delete_label",
-                description: "Deletes a Gmail label",
-                inputSchema: zodToJsonSchema(DeleteLabelSchema),
-            },
-
-        ],
+        tools: allTools ? [...coreTools, ...extraTools] : coreTools,
     }))
 
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
