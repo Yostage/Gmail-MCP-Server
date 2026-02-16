@@ -36,7 +36,7 @@ import {
     CallToolRequestSchema,
     ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { google } from 'googleapis';
+import { gmail as createGmail } from '@googleapis/gmail';
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { OAuth2Client } from 'google-auth-library';
@@ -485,7 +485,7 @@ async function main() {
     }
 
     // Initialize Gmail API
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    const gmail = createGmail({ version: 'v1', auth: oauth2Client });
 
     // Fetch authenticated user's email for building Gmail deeplinks
     let userEmail = '';

@@ -46,11 +46,11 @@
     "node": ">=14.0.0"
   },
   "dependencies": {
+    "@googleapis/gmail": "^16.1.1",
     "@modelcontextprotocol/sdk": "^0.4.0",
     "@types/mime-types": "^2.1.4",
     "@types/turndown": "^5.0.6",
-    "google-auth-library": "^9.4.1",
-    "googleapis": "^129.0.0",
+    "google-auth-library": "^10.1.0",
     "jsdom": "^28.1.0",
     "mcp-evals": "^1.0.18",
     "mime-types": "^3.0.1",
