@@ -26,8 +26,12 @@ Thumbs.db
 
 # Project specific
 gcp-oauth.keys.json
+*.keys.json
+client_secret_*.json
 .calendar-mcp/
 credentials.json
-.calendar-server-credentials.json 
+.calendar-server-credentials.json
 .gcp-oauth.keys.json
+.mcp.json
 secrets
+tmp/
