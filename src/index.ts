@@ -385,6 +385,10 @@ const DownloadAttachmentSchema = z.object({
     savePath: z.string().optional().describe("Directory path to save the attachment (defaults to current directory)"),
 });
 
+const GetEmailLinkSchema = z.object({
+    messageId: z.string().describe("Email message ID to generate a Gmail deeplink for"),
+});
+
 
 // Main function
 async function main() {
@@ -399,6 +403,21 @@ async function main() {
 
     // Initialize Gmail API
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+
+    // Fetch authenticated user's email for building Gmail deeplinks
+    let userEmail = '';
+    try {
+        const profile = await gmail.users.getProfile({ userId: 'me' });
+        userEmail = profile.data.emailAddress || '';
+    } catch {
+        // Non-fatal — deeplinks will just omit authuser param
+    }
+
+    function gmailLink(messageId: string): string {
+        const base = 'https://mail.google.com/mail';
+        const authParam = userEmail ? `?authuser=${encodeURIComponent(userEmail)}` : '';
+        return `${base}${authParam}#all/${messageId}`;
+    }
 
     // Server implementation
     const server = new Server({
@@ -443,6 +462,11 @@ async function main() {
             name: "download_attachment",
             description: "Downloads an email attachment to a specified location",
             inputSchema: zodToJsonSchema(DownloadAttachmentSchema),
+        },
+        {
+            name: "get_email_link",
+            description: "Generates a Gmail web deeplink for an email message ID",
+            inputSchema: zodToJsonSchema(GetEmailLinkSchema),
         },
     ];
 
@@ -1245,6 +1269,18 @@ async function main() {
                             ],
                         };
                     }
+                }
+
+                case "get_email_link": {
+                    const validatedArgs = GetEmailLinkSchema.parse(args);
+                    return {
+                        content: [
+                            {
+                                type: "text",
+                                text: gmailLink(validatedArgs.messageId),
+                            },
+                        ],
+                    };
                 }
 
                 default:
